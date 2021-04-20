@@ -21,8 +21,10 @@
 	#error This is a code template, not a P4 program. Please use the accompanying code generator. 
 {% endif %}
 
-#define DECAY_TIME_WINDOW (100*1000*1000)
+//#define DECAY_TIME_WINDOW (100*1000*1000)
 //Default table entry expiry timeout: 100ms
+//#define DECAY_TIME_WINDOW 4000000000
+#define DECAY_TIME_WINDOW (1000*1000*1000)
 
 //== Preamble: constants, headers
 
@@ -307,11 +309,16 @@ control SwitchIngress(
                 set_h_{{h.id}}_no_match;
             }
             default_action = set_h_{{h.id}}_no_match();
+            // CHANGED
+            {% if h.matches|length > 0 %}
             const entries = {
                 {% for m in h.matches %}
                     {{m.l}} .. {{m.r}} : set_h_{{h.id}}_matched({{m.cid}},{{m.qid}},{{m.ctot}},{{m.kdf}});
                 {% endfor %}
             }
+            {% endif %}
+// CHANGED
+            size = 512;
         }
 
 {% endfor %}
@@ -482,6 +489,8 @@ control SwitchIngress(
                 ek_c3_select_udp;
                 ek_c3_erase;
             }
+# CHANGED
+{% if False %}
             const entries = {
                 {% set K1 = "hdr.tcp.src_port" %}
                 {% set A1 = "ek_c3_select_tcp" %}
@@ -496,6 +505,7 @@ control SwitchIngress(
                 {% endif %}
                 {% endfor %}
             }
+{% endif %}
             default_action = ek_c3_erase;
         }
 
@@ -518,6 +528,8 @@ control SwitchIngress(
                 ek_c4_select_udp;
                 ek_c4_erase;
             }
+# CHANGED
+{% if False %}
             const entries = {
                 {% set K1 = "hdr.tcp.dst_port" %}
                 {% set A1 = "ek_c4_select_tcp" %}
@@ -532,6 +544,7 @@ control SwitchIngress(
                 {% endif %}
                 {% endfor %}
             }
+{% endif %}
             default_action = ek_c4_erase;
         }
 
@@ -690,61 +703,57 @@ control SwitchIngress(
             tb_activated_coupon_tiebreaking.apply();
 
             // no coupon? stop processing
-            if(ig_md.h_s_activated==0){
-                drop_and_exit();
-            }
-            // now we do have coupon, collect it...
+            if(ig_md.h_s_activated==1) {
+                // now we do have coupon, collect it...
 
-            tb_set_onehot.apply();
+                tb_set_onehot.apply();
 
-            tb_extract_key_choice_1_.apply();
-            tb_extract_key_choice_2_.apply();
-            tb_extract_key_choice_3_.apply();
-            tb_extract_key_choice_4_.apply();
+                tb_extract_key_choice_1_.apply();
+                tb_extract_key_choice_2_.apply();
+                tb_extract_key_choice_3_.apply();
+                tb_extract_key_choice_4_.apply();
 
-            extract_key_sig();
-            extract_key_loc();
+                extract_key_sig();
+                extract_key_loc();
 
-            exec_check_decay_timestamp();
-            if(ig_md.cf_decay_has_expired==1){
-                exec_write_keysig();
-            }else{
-                exec_check_keysig();
-            }
-
-            if(ig_md.cf_decay_has_expired==1){
-                exec_regcoupon_flush();
-            }else{
-                if(ig_md.cf_key_matched==1){
-                    exec_regcoupon_merge();
+                exec_check_decay_timestamp();
+                if(ig_md.cf_decay_has_expired==1){
+                    exec_write_keysig();
+                }else{
+                    exec_check_keysig();
                 }
-            }
 
-            bool cf_new_coupon_collected = (ig_md.coupon_merge_check==0);
-            if(ig_md.cf_decay_has_expired==1){
-                exec_counter_set_to_one();
-            }else{
-                if(ig_md.cf_key_matched==1 && cf_new_coupon_collected){
-                    exec_counter_incr();
+                if(ig_md.cf_decay_has_expired==1){
+                    exec_regcoupon_flush();
+                }else{
+                    if(ig_md.cf_key_matched==1){
+                        exec_regcoupon_merge();
+                    }
                 }
-            }
 
-            //finally, check coupon count: do we have enough coupons to send an alert?
-            if(ig_md.coupon_total_activated == ig_md.h_s_ctotal){
-                // Report a query key: add a flag, send to control plane / mirror session, etc
-                
-                // For now, we mark the ethernet headers for alert. 
-                // Only reporting query ID is enough (query key can be reconstructed from header).
-                hdr.ethernet.dst_addr[7:0] = ig_md.h_s_qid;
-                hdr.ethernet.src_addr[7:0] = 233;
-                //hdr.ethernet.src_addr[47:8] = 0;
-                //hdr.ethernet.dst_addr[47:8] = 0;
-                
-                //For debugging with mirrored traffic, alert packets are routed back to sender
-                reflect();
+                bool cf_new_coupon_collected = (ig_md.coupon_merge_check==0);
+                if(ig_md.cf_decay_has_expired==1) {
+                    exec_counter_set_to_one();
+                }else {
+                    if(ig_md.cf_key_matched==1 && cf_new_coupon_collected){
+                        exec_counter_incr();
+                    }
+                }
+
+                if (ig_md.coupon_total_activated == ig_md.h_s_ctotal) {
+                    hdr.ethernet.dst_addr[7:0] = ig_md.h_s_qid;
+                    hdr.ethernet.src_addr[7:0] = 171;
+                    //hdr.ipv4.src_addr[7:0] = 111;
+                    ig_intr_tm_md.ucast_egress_port = 0;
+                } else {
+                    //ig_intr_tm_md.ucast_egress_port = 2;
+                    drop_and_exit();
+                }
             } else {
                 drop_and_exit();
+                //ig_intr_tm_md.ucast_egress_port = 2;
             }
+
            
         }
 }

@@ -32,10 +32,10 @@ allocate_fn = lambda query: args.gamma/len(queries)
 hash_functions = lib_compiler.generate_hash_functions(queries, allocate_fn, args.verbose)
 
 IR = {
-    "hash_functions":hash_functions,
-    "queries":queries,
     "qid_name_lookup":qid_name_lookup,
-    "gamma_specified":args.gamma
+    "gamma_specified":args.gamma,
+    "queries":queries,
+    "hash_functions":hash_functions,
 }
 
-json.dump(IR, open(args.IR_filename,"w"))
+json.dump(IR, open(args.IR_filename,"w"), indent=4)
